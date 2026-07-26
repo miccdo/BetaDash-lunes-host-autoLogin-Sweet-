@@ -51,6 +51,7 @@ function envOrThrow(name) {
 }
 
 // 调用 2Captcha 解决 Turnstile
+// 调用 2Captcha 解决 Turnstile（改进版）
 async function solveTurnstile(page, apiKey) {
   console.log('检测到 Cloudflare 验证，开始调用 2Captcha...');
 
@@ -90,7 +91,7 @@ async function solveTurnstile(page, apiKey) {
   // 轮询获取结果
   let token = null;
   for (let i = 0; i < 40; i++) {
-    await new Promise(r => setTimeout(r, 5000)); // 每5秒查一次
+    await new Promise(r => setTimeout(r, 5000));
 
     const resultRes = await fetch(`https://2captcha.com/res.php?key=${apiKey}&action=get&id=${requestId}&json=1`);
     const resultData = await resultRes.json();
@@ -112,33 +113,62 @@ async function solveTurnstile(page, apiKey) {
     throw new Error('2Captcha 超时，没有拿到 token');
   }
 
-  // 把 token 注入页面
+  // ========== 改进的注入方式 ==========
   await page.evaluate((token) => {
-    // 常见的几种注入方式
-    const input = document.querySelector('[name="cf-turnstile-response"]') || 
-                  document.querySelector('input[name="cf-turnstile-response"]');
-    if (input) {
-      input.value = token;
+    // 1. 设置所有可能的响应字段
+    const selectors = [
+      '[name="cf-turnstile-response"]',
+      'input[name="cf-turnstile-response"]',
+      'textarea[name="cf-turnstile-response"]',
+      '#cf-turnstile-response'
+    ];
+
+    selectors.forEach(sel => {
+      document.querySelectorAll(sel).forEach(el => {
+        el.value = token;
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+        el.dispatchEvent(new Event('change', { bubbles: true }));
+      });
+    });
+
+    // 2. 如果页面有回调函数，尝试调用
+    if (typeof window.turnstileCallback === 'function') {
+      try { window.turnstileCallback(token); } catch (e) {}
     }
 
-    // 有些页面用这个
-    window.turnstileCallback = window.turnstileCallback || function() {};
-    if (typeof window.turnstile !== 'undefined') {
-      // 尝试触发回调
+    // 3. 尝试触发 turnstile 的成功回调
+    if (window.turnstile && typeof window.turnstile.getResponse === 'function') {
+      // 有些实现会检查这个
     }
 
-    // 直接设置隐藏字段
-    let hidden = document.querySelector('input[name="cf-turnstile-response"]');
-    if (!hidden) {
-      hidden = document.createElement('input');
-      hidden.type = 'hidden';
-      hidden.name = 'cf-turnstile-response';
-      document.querySelector('form')?.appendChild(hidden);
+    // 4. 强制创建隐藏字段（防止没有）
+    let form = document.querySelector('form');
+    if (form) {
+      let hidden = form.querySelector('input[name="cf-turnstile-response"]');
+      if (!hidden) {
+        hidden = document.createElement('input');
+        hidden.type = 'hidden';
+        hidden.name = 'cf-turnstile-response';
+        form.appendChild(hidden);
+      }
+      hidden.value = token;
     }
-    hidden.value = token;
   }, token);
 
-  console.log('Token 已注入页面');
+  console.log('Token 已注入页面（改进版）');
+
+  // 等待页面反应
+  await page.waitForTimeout(4000);
+
+  // 尝试点击验证区域（有时需要）
+  try {
+    const checkbox = page.locator('text=/Verify you are human|验证你是人类/i').first();
+    if (await checkbox.count() > 0) {
+      await checkbox.click({ timeout: 3000 }).catch(() => {});
+    }
+  } catch (e) {}
+
+  await page.waitForTimeout(3000);
   return token;
 }
 
