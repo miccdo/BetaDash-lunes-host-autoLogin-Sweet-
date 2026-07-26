@@ -2,7 +2,7 @@
 import { chromium } from '@playwright/test';
 import fs from 'fs';
 
-const LOGIN_URL = 'https://ctrl.lunes.host/auth/login';
+const LOGIN_URL = 'https://betadash.lunes.host/login?next=/';
 
 // Telegram 通知
 async function notifyTelegram({ ok, stage, msg, screenshotPath }) {
