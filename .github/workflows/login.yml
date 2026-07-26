@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
   schedule:
     # 每天北京/河内/曼谷时区（UTC+7）07:00 执行一次（按需调整）
-    - cron: "0 23 * * *"  # GitHub 使用 UTC，这里是 UTC 23:00 ≈ 亚洲/曼谷 07:00
+    - cron: "0 12 */14 * *"  # GitHub 使用 UTC，这里是 UTC 23:00 ≈ 亚洲/曼谷 07:00
 
 jobs:
   login:
