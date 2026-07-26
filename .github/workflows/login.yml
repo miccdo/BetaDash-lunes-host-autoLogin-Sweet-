@@ -15,6 +15,7 @@ jobs:
       # 从 GitHub Secrets 注入
       LUNES_USERNAME: ${{ secrets.LUNES_USERNAME }}
       LUNES_PASSWORD: ${{ secrets.LUNES_PASSWORD }}
+      TWOCAPTCHA_API_KEY: ${{ secrets.TWOCAPTCHA_API_KEY }}
       TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
       TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
 
