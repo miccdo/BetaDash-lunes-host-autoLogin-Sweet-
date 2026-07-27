@@ -131,6 +131,39 @@ async function solveTurnstile(page, apiKey) {
   return token;
 }
 
+// 带 522/5xx 重试功能的页面加载函数
+async function gotoWithRetry(page, url, maxRetries = 3, delayMs = 300000) { // 默认最多试 3 次，间隔 300000ms (5分钟)
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      console.log(`[尝试 ${attempt}/${maxRetries}] 正在访问: ${url}`);
+      const response = await page.goto(url, { waitUntil: 'networkidle2', timeout: 60000 });
+      
+      const status = response ? response.status() : 0;
+      
+      // 捕获 522 (Origin Timeout) 以及所有 5xx 系列服务器错误
+      if (status === 522 || status >= 500) {
+        console.warn(`⚠️ 遇到服务器响应异常 (HTTP ${status})！`);
+        if (attempt < maxRetries) {
+          console.log(`⏱️ Lunes 源站可能超时或正在重启，等待 5 分钟后进行第 ${attempt + 1} 次重试...`);
+          await new Promise(resolve => setTimeout(resolve, delayMs));
+          continue; // 跳过本次，继续下一次循环重试
+        }
+      }
+      
+      // 状态正常（非 5xx 错误），正常返回
+      return response;
+    } catch (error) {
+      console.error(`❌ 页面加载失败: ${error.message}`);
+      if (attempt < maxRetries) {
+        console.log(`⏱️ 遇到网络超时/连接异常，等待 5 分钟后重试...`);
+        await new Promise(resolve => setTimeout(resolve, delayMs));
+      } else {
+        throw error; // 超过重试次数，抛出错误供 main 函数拦截并发送 Telegram 报警
+      }
+    }
+  }
+}
+
 async function main() {
   const username = envOrThrow('LUNES_USERNAME');
   const password = envOrThrow('LUNES_PASSWORD');
@@ -157,7 +190,9 @@ async function main() {
 
   try {
     console.log('正在打开登录页面...');
-    await page.goto(LOGIN_URL, { waitUntil: 'networkidle2', timeout: 60000 });
+    
+    // 使用带 5 分钟重试逻辑的加载函数代替原有的 page.goto
+    await gotoWithRetry(page, LOGIN_URL, 3, 300000);
 
     // 留出 5 秒给 Cloudflare 自动完成指纹校验（隐形插件通常会自动过盾）
     await new Promise(r => setTimeout(r, 5000));
