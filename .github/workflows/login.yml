@@ -33,10 +33,11 @@ jobs:
           npm ci || npm i
 
       - name: Run login
+        id: login
         run: |
           node -v
           npm -v
-          npm run login
+          node scripts/login.js
         continue-on-error: true
 
       - name: Archive screenshots & logs
