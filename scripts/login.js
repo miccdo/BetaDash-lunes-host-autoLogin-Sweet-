@@ -1,6 +1,10 @@
 // scripts/login.js
-import { chromium } from '@playwright/test';
+import puppeteer from 'puppeteer-extra';
+import StealthPlugin from 'puppeteer-extra-plugin-stealth';
 import fs from 'fs';
+
+// 启用隐形插件，专门用来绕过 Cloudflare 5秒盾
+puppeteer.use(StealthPlugin());
 
 const LOGIN_URL = 'https://betadash.lunes.host/login?next=/';
 
@@ -9,10 +13,7 @@ async function notifyTelegram({ ok, stage, msg, screenshotPath }) {
   try {
     const token = process.env.TELEGRAM_BOT_TOKEN;
     const chatId = process.env.TELEGRAM_CHAT_ID;
-    if (!token || !chatId) {
-      console.log('[WARN] TELEGRAM_BOT_TOKEN 或 TELEGRAM_CHAT_ID 未设置，跳过通知');
-      return;
-    }
+    if (!token || !chatId) return;
 
     const text = [
       `🔔 Lunes 自动操作：${ok ? '✅ 成功' : '❌ 失败'}`,
@@ -50,11 +51,10 @@ function envOrThrow(name) {
   return v;
 }
 
-// 解决 Turnstile
+// 解决 Turnstile 验证码
 async function solveTurnstile(page, apiKey) {
-  console.log('检测到 Cloudflare 验证，开始寻找 sitekey...');
+  console.log('检测到表单验证码，开始寻找 sitekey...');
 
-  // 1. 多通道尝试获取 sitekey
   let sitekey = await page.evaluate(() => {
     const el = document.querySelector('[data-sitekey]');
     return el ? el.getAttribute('data-sitekey') : null;
@@ -69,7 +69,6 @@ async function solveTurnstile(page, apiKey) {
   if (!sitekey) throw new Error('没有找到 Turnstile sitekey');
   console.log('找到 sitekey:', sitekey);
 
-  // 2. 提交给 2Captcha
   const createRes = await fetch('https://2captcha.com/in.php', {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -88,7 +87,6 @@ async function solveTurnstile(page, apiKey) {
   const requestId = createData.request;
   console.log('2Captcha 任务 ID:', requestId);
 
-  // 3. 轮询获取 Token
   let token = null;
   for (let i = 0; i < 40; i++) {
     await new Promise(r => setTimeout(r, 5000));
@@ -107,7 +105,6 @@ async function solveTurnstile(page, apiKey) {
   }
   if (!token) throw new Error('2Captcha 超时');
 
-  // 4. 全面注入 Token 并触发事件
   await page.evaluate((token) => {
     const setAndDispatch = (el) => {
       if (!el) return;
@@ -116,10 +113,8 @@ async function solveTurnstile(page, apiKey) {
       el.dispatchEvent(new Event('change', { bubbles: true }));
     };
 
-    // 覆盖常规输入框与隐藏域
     document.querySelectorAll('[name="cf-turnstile-response"], [name="g-recaptcha-response"]').forEach(setAndDispatch);
 
-    // 确保 DOM 中至少有一个容器保存变量
     let form = document.querySelector('form') || document.body;
     let cfInput = document.querySelector('input[name="cf-turnstile-response"]');
     if (!cfInput) {
@@ -129,22 +124,10 @@ async function solveTurnstile(page, apiKey) {
       form.appendChild(cfInput);
     }
     setAndDispatch(cfInput);
-
-    // 尝试执行 Cloudflare 回调函数
-    if (window.turnstile) {
-      try {
-        // 如果使用了 turnstile 对象的内部回调
-        Object.keys(window).forEach(key => {
-          if (key.startsWith('cf') || key.toLowerCase().includes('turnstile')) {
-            if (typeof window[key] === 'function') window[key](token);
-          }
-        });
-      } catch (e) {}
-    }
   }, token);
 
-  console.log('Token 已注入完成');
-  await page.waitForTimeout(3000);
+  console.log('Token 注入完成');
+  await new Promise(r => setTimeout(r, 3000));
   return token;
 }
 
@@ -153,81 +136,73 @@ async function main() {
   const password = envOrThrow('LUNES_PASSWORD');
   const apiKey = envOrThrow('TWOCAPTCHA_API_KEY');
 
-  const browser = await chromium.launch({
-    headless: true,
+  // 使用伪装度极高的 Puppeteer 启动参数
+  const browser = await puppeteer.launch({
+    headless: "new",
     args: [
       '--no-sandbox',
       '--disable-setuid-sandbox',
-      '--disable-blink-features=AutomationControlled' // 防指纹识别关键项
+      '--disable-dev-shm-usage',
+      '--disable-accelerated-2d-canvas',
+      '--no-first-run',
+      '--no-zygote',
+      '--disable-gpu'
     ]
   });
 
-  const context = await browser.newContext({
-    viewport: { width: 1366, height: 768 },
-    userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
-  });
+  const page = await browser.newPage();
+  await page.setViewport({ width: 1366, height: 768 });
 
-  // 抹除 webdriver 特征
-  await context.addInitScript(() => {
-    Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
-  });
-
-  const page = await context.newPage();
   const screenshot = (name) => `./${name}.png`;
 
   try {
     console.log('正在打开登录页面...');
-    await page.goto(LOGIN_URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
+    await page.goto(LOGIN_URL, { waitUntil: 'networkidle2', timeout: 60000 });
 
-    // 延迟 3 秒给 Cloudflare 渲染时间
-    await page.waitForTimeout(3000);
+    // 留出 5 秒给 Cloudflare 自动完成指纹校验（隐形插件通常会自动过盾）
+    await new Promise(r => setTimeout(r, 5000));
 
-    // 检查 Turnstile
-    const hasTurnstile = await page.locator('[data-sitekey]').count() > 0 ||
-                         await page.locator('iframe[src*="turnstile"]').count() > 0 ||
-                         await page.locator('text=/Verify you are human|security verification/i').count() > 0;
+    // 检查是否依然有小框验证码
+    const hasTurnstile = await page.$('[data-sitekey]') !== null || 
+                         await page.$('iframe[src*="turnstile"]') !== null;
 
     if (hasTurnstile) {
       const sp = screenshot('01-before-captcha');
       await page.screenshot({ path: sp, fullPage: true });
-      await notifyTelegram({ ok: false, stage: '检测到验证', msg: '开始调用 2Captcha', screenshotPath: sp });
+      await notifyTelegram({ ok: false, stage: '检测到验证码', msg: '开始调用 2Captcha', screenshotPath: sp });
 
       await solveTurnstile(page, apiKey);
     }
 
     // 填写账号密码
     console.log('开始填写账号密码...');
-    const userInput = page.locator('input[name="username"], input[name="email"], input[type="email"]').first();
-    const passInput = page.locator('input[name="password"], input[type="password"]').first();
+    await page.waitForSelector('input[type="email"], input[name="username"], input[name="email"]', { timeout: 20000 });
+    
+    // 模拟真人敲键盘输入（防抓包识别）
+    const userInput = (await page.$('input[name="username"]')) || (await page.$('input[type="email"]'));
+    const passInput = await page.$('input[type="password"]');
 
-    await userInput.waitFor({ state: 'visible', timeout: 20000 });
-    await passInput.waitFor({ state: 'visible', timeout: 20000 });
+    await userInput.type(username, { delay: 50 });
+    await passInput.type(password, { delay: 50 });
 
-    await userInput.fill(username);
-    await passInput.fill(password);
-
-    const loginBtn = page.locator('button[type="submit"], button:has-text("Sign in"), button:has-text("Login")').first();
-    await loginBtn.waitFor({ state: 'visible', timeout: 10000 });
+    const loginBtn = await page.$('button[type="submit"]');
 
     const spBefore = screenshot('02-before-submit');
     await page.screenshot({ path: spBefore, fullPage: true });
 
-    // 点击提交
-    await loginBtn.click();
+    // 点击提交并等待
+    await Promise.all([
+      loginBtn.click(),
+      page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 20000 }).catch(() => {})
+    ]);
 
-    // 等待页面跳转或网络加载完成
-    await Promise.race([
-      page.waitForURL(url => !url.toString().includes('/login'), { timeout: 15000 }),
-      page.waitForLoadState('networkidle', { timeout: 15000 })
-    ]).catch(() => {});
-
-    await page.waitForTimeout(5000);
+    await new Promise(r => setTimeout(r, 5000));
 
     const spAfter = screenshot('03-after-submit');
     await page.screenshot({ path: spAfter, fullPage: true });
 
     const url = page.url();
-    const success = !url.includes('/login') || await page.locator('text=/Dashboard|Logout|Servers|控制台/i').count() > 0;
+    const success = !url.includes('/login');
 
     if (success) {
       console.log('✅ 登录成功！当前URL:', url);
@@ -246,7 +221,6 @@ async function main() {
     await notifyTelegram({ ok: false, stage: '异常', msg: e?.message || String(e), screenshotPath: fs.existsSync(sp) ? sp : undefined });
     process.exitCode = 1;
   } finally {
-    await context.close();
     await browser.close();
   }
 }
