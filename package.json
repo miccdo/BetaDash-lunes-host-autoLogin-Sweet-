@@ -1,13 +1,10 @@
 {
-  "name": "lunes-auto-login",
+  "name": "lunes-auto-renew",
   "version": "1.0.0",
-  "private": true,
-  "license": "MIT",
   "type": "module",
-  "scripts": {
-    "login": "node scripts/login.js"
-  },
   "dependencies": {
-    "@playwright/test": "^1.46.0"
+    "puppeteer": "^22.0.0",
+    "puppeteer-extra": "^3.3.6",
+    "puppeteer-extra-plugin-stealth": "^2.11.2"
   }
 }
