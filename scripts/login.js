@@ -6,7 +6,7 @@ import fs from 'fs';
 // 启用隐形插件，专门用来绕过 Cloudflare 5秒盾
 puppeteer.use(StealthPlugin());
 
-const LOGIN_URL = 'https://betadash.lunes.host/servers/91427';
+const LOGIN_URL = 'https://betadash.lunes.host/servers/91809';
 
 // Telegram 通知
 async function notifyTelegram({ ok, stage, msg, screenshotPath }) {
