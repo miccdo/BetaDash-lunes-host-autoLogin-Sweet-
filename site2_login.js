@@ -52,7 +52,7 @@ async function sendTelegramPhoto(botToken, chatId, photoBuffer, caption) {
 
   try {
     // 1. 打开登录页面
-    await page.goto('https://ctrl.lunes.host/auth/login', { waitUntil: 'networkidle2' });
+    await page.goto('https://ctrl.lunes.host/server/58d21414', { waitUntil: 'networkidle2' });
 
     // 2. 填写账号和密码
     await page.type('input[name="username"]', username);
