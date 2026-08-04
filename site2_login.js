@@ -3,7 +3,7 @@ import StealthPlugin from 'puppeteer-extra-plugin-stealth';
 
 puppeteer.use(StealthPlugin());
 
-// 使用原生 fetch 发送图片到 Telegram 的辅助函数 (无需 axios/form-data 依赖)
+// 使用原生 fetch 发送图片到 Telegram 的辅助函数
 async function sendTelegramPhoto(botToken, chatId, photoBuffer, caption) {
   if (!botToken || !chatId) {
     console.log('⚠️ 未配置 Telegram 变量，跳过截图发送');
@@ -43,8 +43,8 @@ async function sendTelegramPhoto(botToken, chatId, photoBuffer, caption) {
 
   console.log('🔍 环境变量检查：');
   console.log(' - 用户名:', username ? '已读取' : '❌ 未读取');
-  console.log(' - TG Token:', tgToken ? '已读取' : '❌ 未读取(请检查Secrets名称)');
-  console.log(' - TG Chat ID:', tgChatId ? '已读取' : '❌ 未读取(请检查Secrets名称)');
+  console.log(' - TG Token:', tgToken ? '已读取' : '❌ 未读取');
+  console.log(' - TG Chat ID:', tgChatId ? '已读取' : '❌ 未读取');
 
   console.log('🚀 开始执行 Lunes Ctrl 登录保活...');
 
@@ -54,7 +54,6 @@ async function sendTelegramPhoto(botToken, chatId, photoBuffer, caption) {
   });
 
   const page = await browser.newPage();
-  // 设置视口大小以截取较清晰的图
   await page.setViewport({ width: 1440, height: 900 });
 
   try {
@@ -75,18 +74,18 @@ async function sendTelegramPhoto(botToken, chatId, photoBuffer, caption) {
 
     console.log('✅ 登录成功！正在跳转到特定服务器页...');
 
-    // 4. 🔗 【新增步骤】强制跳转到目标服务器页面
+    // 4. 强制跳转到目标服务器页面
     await page.goto('https://ctrl.lunes.host/server/58d21414', { waitUntil: 'networkidle2' });
     
-    // 稍微等待一下，确保页面上的服务器状态（如 CPU/内存图表）加载出来
+    // 5. 替换为标准的原生定时等待 3 秒（兼容新版 Puppeteer）
     console.log('⏳ 正在等待服务器状态加载...');
-    await page.waitForTimeout(3000); 
+    await new Promise(resolve => setTimeout(resolve, 3000));
 
-    // 5. 截图服务器管理页（调整为全页截图，能看到更多信息）
+    // 6. 截图服务器管理页
     console.log('📸 正在截取服务器状态页...');
     const screenshot = await page.screenshot({ fullPage: true });
 
-    // 6. 发送截图到 Telegram
+    // 7. 发送截图到 Telegram
     await sendTelegramPhoto(
       tgToken,
       tgChatId,
@@ -96,9 +95,8 @@ async function sendTelegramPhoto(botToken, chatId, photoBuffer, caption) {
 
   } catch (error) {
     console.error('❌ 登录流程出现异常:', error.message);
-    process.exit(1); // 抛出错误让 Actions 标记为失败
+    process.exit(1);
   } finally {
-    // 始终关闭浏览器
     await browser.close();
   }
 })();
