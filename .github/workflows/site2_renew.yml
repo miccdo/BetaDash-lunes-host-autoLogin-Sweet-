@@ -1,0 +1,32 @@
+name: Lunes Ctrl Daily Login
+
+on:
+  schedule:
+    # 每天 UTC 20:00 自动运行（相当于北京/韩国时间 凌晨 4:00/5:00）
+    - cron: '0 20 * * *'
+  workflow_dispatch:
+
+jobs:
+  renew:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Run Login Script
+        env:
+          # 复用已存的变量，自动继承 Telegram 通知
+          SITE_USERNAME: ${{ secrets.LUNES_USERNAME }}
+          SITE_PASSWORD: ${{ secrets.LUNES_PASSWORD }}
+          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+          TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+        run: node site2_login.js
