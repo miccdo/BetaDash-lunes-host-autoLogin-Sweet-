@@ -24,9 +24,9 @@ jobs:
 
       - name: Run Login Script
         env:
-          # 复用已存的变量，自动继承 Telegram 通知
           SITE_USERNAME: ${{ secrets.LUNES_USERNAME }}
           SITE_PASSWORD: ${{ secrets.LUNES_PASSWORD }}
-          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
-          TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+          # 修改这里：将 Secrets 的名字改成和截图里一模一样的 TELEGRAM_xxx
+          TG_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TG_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: node site2_login.js
