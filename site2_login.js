@@ -1,28 +1,36 @@
 import puppeteer from 'puppeteer-extra';
 import StealthPlugin from 'puppeteer-extra-plugin-stealth';
-import axios from 'axios';
-import FormData from 'form-data';
 
 puppeteer.use(StealthPlugin());
 
-// 发送图片到 Telegram 的辅助函数
+// 使用原生 fetch 发送图片到 Telegram
 async function sendTelegramPhoto(botToken, chatId, photoBuffer, caption) {
   if (!botToken || !chatId) {
     console.log('⚠️ 未配置 Telegram 变量，跳过截图发送');
     return;
   }
   try {
-    const form = new FormData();
-    form.append('chat_id', chatId);
-    form.append('caption', caption);
-    form.append('photo', photoBuffer, { filename: 'screenshot.png' });
+    const formData = new FormData();
+    formData.append('chat_id', chatId);
+    formData.append('caption', caption);
+    
+    // 将 Buffer 转换为 Blob
+    const blob = new Blob([photoBuffer], { type: 'image/png' });
+    formData.append('photo', blob, 'screenshot.png');
 
-    await axios.post(`https://api.telegram.org/bot${botToken}/sendPhoto`, form, {
-      headers: form.getHeaders(),
+    const response = await fetch(`https://api.telegram.org/bot${botToken}/sendPhoto`, {
+      method: 'POST',
+      body: formData,
     });
-    console.log('📱 Telegram 截图通知已发送！');
+
+    if (response.ok) {
+      console.log('📱 Telegram 截图通知已发送！');
+    } else {
+      const errText = await response.text();
+      console.error('❌ 发送 Telegram 消息失败:', errText);
+    }
   } catch (err) {
-    console.error('❌ 发送 Telegram 消息失败:', err.message);
+    console.error('❌ 发送 Telegram 消息请求异常:', err.message);
   }
 }
 
