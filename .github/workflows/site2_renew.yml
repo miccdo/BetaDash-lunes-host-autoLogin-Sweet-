@@ -4,6 +4,7 @@ on:
   schedule:
     # 每天 UTC 20:00 自动运行（相当于北京/韩国时间 凌晨 4:00/5:00）
     - cron: '0 20 * * *'
+  # 保留手动触发按钮
   workflow_dispatch:
 
 jobs:
@@ -20,13 +21,15 @@ jobs:
           node-version: '20'
 
       - name: Install dependencies
+        # 注意：这里只需安装 puppeteer-extra 和 stealth 插件，axios 发送 TG 逻辑已被 site2_login.js 原生 fetch 替代，无需重复安装
         run: npm install
 
       - name: Run Login Script
         env:
+          # 直接复用你仓库已有的 Secrets 变量
           SITE_USERNAME: ${{ secrets.LUNES_USERNAME }}
           SITE_PASSWORD: ${{ secrets.LUNES_PASSWORD }}
-          # 修改这里：将 Secrets 的名字改成和截图里一模一样的 TELEGRAM_xxx
+          # 确保这里和 image_0.png 确认的名字完全一致！
           TG_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: node site2_login.js
