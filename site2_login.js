@@ -1,7 +1,8 @@
-const puppeteer = require('puppeteer-extra');
-const StealthPlugin = require('puppeteer-extra-plugin-stealth');
-const axios = require('axios');
-const FormData = require('form-data');
+import puppeteer from 'puppeteer-extra';
+import StealthPlugin from 'puppeteer-extra-plugin-stealth';
+import axios from 'axios';
+import FormData from 'form-data';
+
 puppeteer.use(StealthPlugin());
 
 // 发送图片到 Telegram 的辅助函数
@@ -39,12 +40,11 @@ async function sendTelegramPhoto(botToken, chatId, photoBuffer, caption) {
   });
 
   const page = await browser.newPage();
-  // 设置视口大小以截取美观的全屏图
   await page.setViewport({ width: 1280, height: 800 });
 
   try {
     // 1. 打开登录页面
-    await page.goto('https://ctrl.lunes.host/server/58d21414', { waitUntil: 'networkidle2' });
+    await page.goto('https://ctrl.lunes.host/auth/login', { waitUntil: 'networkidle2' });
 
     // 2. 填写账号和密码
     await page.type('input[name="username"]', username);
