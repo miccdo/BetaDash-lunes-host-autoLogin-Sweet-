@@ -2,20 +2,58 @@ name: Keep GitHub Actions Alive
 
 on:
   schedule:
-    # 每周一 UTC 00:00（约北京时间/韩国时间早上 8/9 点）自动运行一次
-    - cron: '0 0 * * 1'
-  workflow_dispatch: # 允许手动触发
+    - cron: '0 0 * * *'   # 每天检查一次
+  workflow_dispatch:
 
 jobs:
   keepalive:
     runs-on: ubuntu-latest
     permissions:
-      contents: write # 赋予提交代码的权限
+      contents: write
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Decide whether to run
+        id: decide
+        run: |
+          if [ ! -f .keepalive ]; then
+            echo "首次运行，执行保活"
+            echo "should_run=true" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          LAST_RUN=$(stat -c %Y .keepalive 2>/dev/null || echo 0)
+          NOW=$(date +%s)
+          DAYS_PASSED=$(( (NOW - LAST_RUN) / 86400 ))
+
+          echo "距离上次保活已经过去 ${DAYS_PASSED} 天"
+
+          # 3天内强制跳过（冷却期）
+          if [ $DAYS_PASSED -lt 3 ]; then
+            echo "还在冷却期内，跳过"
+            echo "should_run=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          # 超过6天强制执行
+          if [ $DAYS_PASSED -ge 6 ]; then
+            echo "已经超过6天，强制执行"
+            echo "should_run=true" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          # 3~6天之间，随机决定（大约40%概率）
+          if [ $((RANDOM % 5)) -lt 2 ]; then
+            echo "随机命中，执行保活"
+            echo "should_run=true" >> $GITHUB_OUTPUT
+          else
+            echo "随机跳过"
+            echo "should_run=false" >> $GITHUB_OUTPUT
+          fi
+
       - name: Prevent Actions Suspended
+        if: steps.decide.outputs.should_run == 'true'
         run: |
           echo "Last keepalive trigger: $(date -u)" > .keepalive
           git config --global user.name "github-actions[bot]"
