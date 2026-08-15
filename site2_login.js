@@ -75,7 +75,7 @@ async function sendTelegramPhoto(botToken, chatId, photoBuffer, caption) {
     console.log('✅ 登录成功！正在跳转到特定服务器页...');
 
     // 4. 强制跳转到目标服务器页面
-    await page.goto('https://ctrl.lunes.host/server/58d21414', { waitUntil: 'networkidle2' });
+    await page.goto('https://ctrl.lunes.host/server/6a64f6dd', { waitUntil: 'networkidle2' });
     
     // 5. 替换为标准的原生定时等待 3 秒（兼容新版 Puppeteer）
     console.log('⏳ 正在等待服务器状态加载...');
