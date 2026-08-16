@@ -4,7 +4,7 @@ on:
   schedule:
     # 韩国时间 (UTC+9) 凌晨 1:00 对应 UTC 16:00
     - cron: '0 16 * * *'
-  workflow_dispatch:      # 支持在 GitHub 页面手动点击运行
+  workflow_dispatch:      # 仅作为手动触发入口，逻辑与 Cron 完全一致
 
 jobs:
   keepalive:
@@ -15,30 +15,21 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # 拉取完整历史，确保时间判断准确
+          fetch-depth: 0  # 拉取完整 Git 历史
 
-      # 1. 韩国时间 1:00 ~ 7:00 随机延迟
+      # 1. 韩国时间 1:00 ~ 7:00 随机延迟 (休眠 0 ~ 360 分钟)
       - name: Random Delay (KST 1:00 - 7:00)
-        if: github.event_name == 'schedule'
         run: |
-          # 随机生成 0 到 21600 秒（0 ~ 6 小时）
           RAND_DELAY=$(( RANDOM % 21601 ))
           DELAY_MIN=$(( RAND_DELAY / 60 ))
           echo "⏱️ 开启随机延时，将休眠 ${DELAY_MIN} 分钟后执行..."
           sleep $RAND_DELAY
 
-      # 2. 周期与摇号判断
+      # 2. 严格的滚动周期判断
       - name: Decide whether to run
         id: decide
         run: |
-          # 手动点击触发：直接强制运行，方便随时调试
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "👉 手动触发，强制执行"
-            echo "should_run=true" >> $GITHUB_OUTPUT
-            exit 0
-          fi
-
-          # 首次运行处理
+          # 首次运行处理：若无 .keepalive 文件直接触发
           if [ ! -f .keepalive ]; then
             echo "首次运行，执行保活与登录"
             echo "should_run=true" >> $GITHUB_OUTPUT
@@ -58,21 +49,21 @@ jobs:
 
           echo "距离上次运行已过去 ${DAYS_PASSED} 天"
 
-          # 3天冷却期（第 1, 2, 3 天）：跳过
+          # 第 1, 2, 3 天（3 天冷却期）：坚决跳过
           if [ $DAYS_PASSED -le 3 ]; then
             echo "还在 3 天冷却期内（第 ${DAYS_PASSED} 天），跳过"
             echo "should_run=false" >> $GITHUB_OUTPUT
             exit 0
           fi
 
-          # 保底期（第 11 天及以上 / 满一轮）：强制触发
+          # 第 11 天及以上（保底期）：强制触发并重置循环
           if [ $DAYS_PASSED -ge 11 ]; then
             echo "已到保底日（第 ${DAYS_PASSED} 天），强制执行并重置循环"
             echo "should_run=true" >> $GITHUB_OUTPUT
             exit 0
           fi
 
-          # 7天摇号期（第 4 ~ 10 天）：抽中 0 运行（1/7 概率）
+          # 第 4 ~ 10 天（7 天摇号期）：抽中 0 运行（1/7 概率）
           RAND_NUM=$(( RANDOM % 7 ))
           echo "摇号期（第 ${DAYS_PASSED} 天）- 随机数字: ${RAND_NUM} (抽中 0 触发)"
 
@@ -91,7 +82,7 @@ jobs:
         with:
           node-version: 20
 
-      # 4. 安装依赖
+      # 4. 安装项目依赖
       - name: Install Dependencies
         if: steps.decide.outputs.should_run == 'true'
         run: |
@@ -99,7 +90,7 @@ jobs:
             npm ci || npm install
           fi
 
-      # 5. 执行自动登录脚本
+      # 5. 执行自动登录 Puppeteer 脚本
       - name: Run Login Script
         if: steps.decide.outputs.should_run == 'true'
         env:
@@ -110,7 +101,7 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: node scripts/login.js
 
-      # 6. 更新时间戳并 Git Push 保活
+      # 6. 更新 .keepalive 时间戳并 Git Push
       - name: Prevent Actions Suspended
         if: steps.decide.outputs.should_run == 'true'
         run: |
