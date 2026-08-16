@@ -1,10 +1,10 @@
-name: Keep GitHub Actions Alive
+name: Keep GitHub Actions Alive & Auto Login
 
 on:
   schedule:
-    # 韩国时间 (UTC+9) 凌晨 1:00 对应 UTC 时间 16:00
+    # 韩国时间 (UTC+9) 凌晨 1:00 对应 UTC 16:00
     - cron: '0 16 * * *'
-  workflow_dispatch:      # 支持手动触发测试
+  workflow_dispatch:      # 支持在 GitHub 页面手动点击运行
 
 jobs:
   keepalive:
@@ -15,10 +15,10 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          fetch-depth: 0  # 拉取完整历史，确保时间判断准确
 
+      # 1. 韩国时间 1:00 ~ 7:00 随机延迟
       - name: Random Delay (KST 1:00 - 7:00)
-        # 手动触发时跳过等待，定时触发时随机休眠 0~360 分钟
         if: github.event_name == 'schedule'
         run: |
           # 随机生成 0 到 21600 秒（0 ~ 6 小时）
@@ -27,24 +27,25 @@ jobs:
           echo "⏱️ 开启随机延时，将休眠 ${DELAY_MIN} 分钟后执行..."
           sleep $RAND_DELAY
 
+      # 2. 周期与摇号判断
       - name: Decide whether to run
         id: decide
         run: |
-          # 1. 手动点击触发：直接强制运行，方便测试
+          # 手动点击触发：直接强制运行，方便随时调试
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             echo "👉 手动触发，强制执行"
             echo "should_run=true" >> $GITHUB_OUTPUT
             exit 0
           fi
 
-          # 2. 首次运行：无记录直接执行
+          # 首次运行处理
           if [ ! -f .keepalive ]; then
-            echo "首次运行，执行保活"
+            echo "首次运行，执行保活与登录"
             echo "should_run=true" >> $GITHUB_OUTPUT
             exit 0
           fi
 
-          # 3. 计算已过去的天数
+          # 计算距离上次运行过去的天数
           LAST_RUN=$(cat .keepalive 2>/dev/null | tr -cd '0-9')
           LAST_RUN=${LAST_RUN:-0}
           NOW=$(date +%s)
@@ -57,36 +58,62 @@ jobs:
 
           echo "距离上次运行已过去 ${DAYS_PASSED} 天"
 
-          # 4. 3天冷却期（第 1, 2, 3 天）：坚决不运行
+          # 3天冷却期（第 1, 2, 3 天）：跳过
           if [ $DAYS_PASSED -le 3 ]; then
             echo "还在 3 天冷却期内（第 ${DAYS_PASSED} 天），跳过"
             echo "should_run=false" >> $GITHUB_OUTPUT
             exit 0
           fi
 
-          # 5. 保底期（第 11 天及以上）：7 天摇号均未命中，强制触发
+          # 保底期（第 11 天及以上 / 满一轮）：强制触发
           if [ $DAYS_PASSED -ge 11 ]; then
             echo "已到保底日（第 ${DAYS_PASSED} 天），强制执行并重置循环"
             echo "should_run=true" >> $GITHUB_OUTPUT
             exit 0
           fi
 
-          # 6. 7天摇号期（第 4 ~ 10 天）：生成 0~6 随机数，抽中 0 运行
+          # 7天摇号期（第 4 ~ 10 天）：抽中 0 运行（1/7 概率）
           RAND_NUM=$(( RANDOM % 7 ))
           echo "摇号期（第 ${DAYS_PASSED} 天）- 随机数字: ${RAND_NUM} (抽中 0 触发)"
 
           if [ $RAND_NUM -eq 0 ]; then
-            echo "🎯 命中数字 0！执行保活并重置循环"
+            echo "🎯 命中数字 0！执行任务并重置循环"
             echo "should_run=true" >> $GITHUB_OUTPUT
           else
             echo "🎲 未命中（数字为 ${RAND_NUM}），跳过"
             echo "should_run=false" >> $GITHUB_OUTPUT
           fi
 
+      # 3. 配置 Node.js 环境
+      - name: Setup Node.js
+        if: steps.decide.outputs.should_run == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # 4. 安装依赖
+      - name: Install Dependencies
+        if: steps.decide.outputs.should_run == 'true'
+        run: |
+          if [ -f package.json ]; then
+            npm ci || npm install
+          fi
+
+      # 5. 执行自动登录脚本
+      - name: Run Login Script
+        if: steps.decide.outputs.should_run == 'true'
+        env:
+          LUNES_USERNAME: ${{ secrets.LUNES_USERNAME }}
+          LUNES_PASSWORD: ${{ secrets.LUNES_PASSWORD }}
+          TWOCAPTCHA_API_KEY: ${{ secrets.TWOCAPTCHA_API_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: node scripts/login.js
+
+      # 6. 更新时间戳并 Git Push 保活
       - name: Prevent Actions Suspended
         if: steps.decide.outputs.should_run == 'true'
         run: |
-          # 刷新时间戳（开启新一轮循环）
           date +%s > .keepalive
 
           git config --global user.name "github-actions[bot]"
