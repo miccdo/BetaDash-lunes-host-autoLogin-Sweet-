@@ -13,6 +13,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # 拉取完整历史，确保文件时间戳/日志准确
 
       - name: Decide whether to run
         id: decide
@@ -23,9 +25,15 @@ jobs:
             exit 0
           fi
 
-          LAST_RUN=$(stat -c %Y .keepalive 2>/dev/null || echo 0)
+          # 直接读取文件内保存的上次时间戳（时间戳格式为 UTC 秒数）
+          LAST_RUN=$(cat .keepalive_timestamp 2>/dev/null || echo 0)
           NOW=$(date +%s)
-          DAYS_PASSED=$(( (NOW - LAST_RUN) / 86400 ))
+          
+          if [ "$LAST_RUN" -eq 0 ]; then
+            DAYS_PASSED=999
+          else
+            DAYS_PASSED=$(( (NOW - LAST_RUN) / 86400 ))
+          fi
 
           echo "距离上次保活已经过去 ${DAYS_PASSED} 天"
 
@@ -55,9 +63,13 @@ jobs:
       - name: Prevent Actions Suspended
         if: steps.decide.outputs.should_run == 'true'
         run: |
+          # 同时记录可读时间和时间戳
           echo "Last keepalive trigger: $(date -u)" > .keepalive
+          date +%s > .keepalive_timestamp
+
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git add .keepalive
+          git add .keepalive .keepalive_timestamp
           git commit -m "chore: keep github actions alive [skip ci]" || exit 0
+          git pull --rebase
           git push
