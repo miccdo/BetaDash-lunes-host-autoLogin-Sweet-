@@ -2,8 +2,9 @@ name: Keep GitHub Actions Alive
 
 on:
   schedule:
-    - cron: '0 0 * * *'   # 每天检查一次
-  workflow_dispatch:
+    # 韩国时间 (UTC+9) 凌晨 1:00 对应 UTC 时间 16:00
+    - cron: '0 16 * * *'
+  workflow_dispatch:      # 支持手动触发测试
 
 jobs:
   keepalive:
@@ -14,19 +15,38 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # 拉取完整历史，确保文件时间戳/日志准确
+          fetch-depth: 0
+
+      - name: Random Delay (KST 1:00 - 7:00)
+        # 手动触发时跳过等待，定时触发时随机休眠 0~360 分钟
+        if: github.event_name == 'schedule'
+        run: |
+          # 随机生成 0 到 21600 秒（0 ~ 6 小时）
+          RAND_DELAY=$(( RANDOM % 21601 ))
+          DELAY_MIN=$(( RAND_DELAY / 60 ))
+          echo "⏱️ 开启随机延时，将休眠 ${DELAY_MIN} 分钟后执行..."
+          sleep $RAND_DELAY
 
       - name: Decide whether to run
         id: decide
         run: |
+          # 1. 手动点击触发：直接强制运行，方便测试
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "👉 手动触发，强制执行"
+            echo "should_run=true" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          # 2. 首次运行：无记录直接执行
           if [ ! -f .keepalive ]; then
             echo "首次运行，执行保活"
             echo "should_run=true" >> $GITHUB_OUTPUT
             exit 0
           fi
 
-          # 直接读取文件内保存的上次时间戳（时间戳格式为 UTC 秒数）
-          LAST_RUN=$(cat .keepalive_timestamp 2>/dev/null || echo 0)
+          # 3. 计算已过去的天数
+          LAST_RUN=$(cat .keepalive 2>/dev/null | tr -cd '0-9')
+          LAST_RUN=${LAST_RUN:-0}
           NOW=$(date +%s)
           
           if [ "$LAST_RUN" -eq 0 ]; then
@@ -35,41 +55,43 @@ jobs:
             DAYS_PASSED=$(( (NOW - LAST_RUN) / 86400 ))
           fi
 
-          echo "距离上次保活已经过去 ${DAYS_PASSED} 天"
+          echo "距离上次运行已过去 ${DAYS_PASSED} 天"
 
-          # 3天内强制跳过（冷却期）
-          if [ $DAYS_PASSED -lt 3 ]; then
-            echo "还在冷却期内，跳过"
+          # 4. 3天冷却期（第 1, 2, 3 天）：坚决不运行
+          if [ $DAYS_PASSED -le 3 ]; then
+            echo "还在 3 天冷却期内（第 ${DAYS_PASSED} 天），跳过"
             echo "should_run=false" >> $GITHUB_OUTPUT
             exit 0
           fi
 
-          # 超过6天强制执行
-          if [ $DAYS_PASSED -ge 6 ]; then
-            echo "已经超过6天，强制执行"
+          # 5. 保底期（第 11 天及以上）：7 天摇号均未命中，强制触发
+          if [ $DAYS_PASSED -ge 11 ]; then
+            echo "已到保底日（第 ${DAYS_PASSED} 天），强制执行并重置循环"
             echo "should_run=true" >> $GITHUB_OUTPUT
             exit 0
           fi
 
-          # 3~6天之间，随机决定（大约40%概率）
-          if [ $((RANDOM % 5)) -lt 2 ]; then
-            echo "随机命中，执行保活"
+          # 6. 7天摇号期（第 4 ~ 10 天）：生成 0~6 随机数，抽中 0 运行
+          RAND_NUM=$(( RANDOM % 7 ))
+          echo "摇号期（第 ${DAYS_PASSED} 天）- 随机数字: ${RAND_NUM} (抽中 0 触发)"
+
+          if [ $RAND_NUM -eq 0 ]; then
+            echo "🎯 命中数字 0！执行保活并重置循环"
             echo "should_run=true" >> $GITHUB_OUTPUT
           else
-            echo "随机跳过"
+            echo "🎲 未命中（数字为 ${RAND_NUM}），跳过"
             echo "should_run=false" >> $GITHUB_OUTPUT
           fi
 
       - name: Prevent Actions Suspended
         if: steps.decide.outputs.should_run == 'true'
         run: |
-          # 同时记录可读时间和时间戳
-          echo "Last keepalive trigger: $(date -u)" > .keepalive
-          date +%s > .keepalive_timestamp
+          # 刷新时间戳（开启新一轮循环）
+          date +%s > .keepalive
 
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git add .keepalive .keepalive_timestamp
+          git add .keepalive
           git commit -m "chore: keep github actions alive [skip ci]" || exit 0
           git pull --rebase
           git push
