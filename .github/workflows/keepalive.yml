@@ -4,7 +4,7 @@ on:
   schedule:
     # 韩国时间 (UTC+9) 凌晨 1:00 对应 UTC 16:00
     - cron: '0 16 * * *'
-  workflow_dispatch:      # 仅作为手动触发入口，逻辑与 Cron 完全一致
+  workflow_dispatch:      # 支持手动触发
 
 jobs:
   keepalive:
@@ -14,66 +14,30 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0  # 拉取完整 Git 历史
 
-      # 1. 韩国时间 1:00 ~ 7:00 随机延迟 (休眠 0 ~ 360 分钟)
-      - name: Random Delay (KST 1:00 - 7:00)
-        run: |
-          RAND_DELAY=$(( RANDOM % 21601 ))
-          DELAY_MIN=$(( RAND_DELAY / 60 ))
-          echo "⏱️ 开启随机延时，将休眠 ${DELAY_MIN} 分钟后执行..."
-          sleep $RAND_DELAY
-
-      # 2. 严格的滚动周期判断
+      # 1. 先进行 0~6 随机抽签
       - name: Decide whether to run
         id: decide
         run: |
-          # 首次运行处理：若无 .keepalive 文件直接触发
-          if [ ! -f .keepalive ]; then
-            echo "首次运行，执行保活与登录"
-            echo "should_run=true" >> $GITHUB_OUTPUT
-            exit 0
-          fi
-
-          # 计算距离上次运行过去的天数
-          LAST_RUN=$(cat .keepalive 2>/dev/null | tr -cd '0-9')
-          LAST_RUN=${LAST_RUN:-0}
-          NOW=$(date +%s)
-          
-          if [ "$LAST_RUN" -eq 0 ]; then
-            DAYS_PASSED=999
-          else
-            DAYS_PASSED=$(( (NOW - LAST_RUN) / 86400 ))
-          fi
-
-          echo "距离上次运行已过去 ${DAYS_PASSED} 天"
-
-          # 第 1, 2, 3 天（3 天冷却期）：坚决跳过
-          if [ $DAYS_PASSED -le 3 ]; then
-            echo "还在 3 天冷却期内（第 ${DAYS_PASSED} 天），跳过"
-            echo "should_run=false" >> $GITHUB_OUTPUT
-            exit 0
-          fi
-
-          # 第 11 天及以上（保底期）：强制触发并重置循环
-          if [ $DAYS_PASSED -ge 11 ]; then
-            echo "已到保底日（第 ${DAYS_PASSED} 天），强制执行并重置循环"
-            echo "should_run=true" >> $GITHUB_OUTPUT
-            exit 0
-          fi
-
-          # 第 4 ~ 10 天（7 天摇号期）：抽中 0 运行（1/7 概率）
           RAND_NUM=$(( RANDOM % 7 ))
-          echo "摇号期（第 ${DAYS_PASSED} 天）- 随机数字: ${RAND_NUM} (抽中 0 触发)"
+          echo "🎲 今日抽签数字: ${RAND_NUM} (只有命中 0 才执行)"
 
           if [ $RAND_NUM -eq 0 ]; then
-            echo "🎯 命中数字 0！执行任务并重置循环"
+            echo "🎯 命中数字 0！准备执行任务"
             echo "should_run=true" >> $GITHUB_OUTPUT
           else
-            echo "🎲 未命中（数字为 ${RAND_NUM}），跳过"
+            echo "⏭️ 未命中数字 0（抽中 ${RAND_NUM}），直接结束"
             echo "should_run=false" >> $GITHUB_OUTPUT
           fi
+
+      # 2. 中了之后，再进行韩国时间 1:00 ~ 7:00 的随机延迟 (休眠 0 ~ 360 分钟)
+      - name: Random Delay (KST 1:00 - 7:00)
+        if: steps.decide.outputs.should_run == 'true'
+        run: |
+          RAND_DELAY=$(( RANDOM % 21601 ))
+          DELAY_MIN=$(( RAND_DELAY / 60 ))
+          echo "⏱️ 抽中任务！开启随机延时，休眠 ${DELAY_MIN} 分钟后再执行..."
+          sleep $RAND_DELAY
 
       # 3. 配置 Node.js 环境
       - name: Setup Node.js
@@ -90,7 +54,7 @@ jobs:
             npm ci || npm install
           fi
 
-      # 5. 执行自动登录 Puppeteer 脚本
+      # 5. 执行 Puppeteer 自动登录脚本
       - name: Run Login Script
         if: steps.decide.outputs.should_run == 'true'
         env:
@@ -101,11 +65,11 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: node scripts/login.js
 
-      # 6. 更新 .keepalive 时间戳并 Git Push
+      # 6. Git Push 提交保活
       - name: Prevent Actions Suspended
         if: steps.decide.outputs.should_run == 'true'
         run: |
-          date +%s > .keepalive
+          date -u > .keepalive
 
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
