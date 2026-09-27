@@ -1,39 +1,39 @@
-name: Lunes Ctrl Daily Login
+# name: Lunes Ctrl Daily Login
 
-on:
-  schedule:
-    # 每天 UTC 04:00 启动（对应韩国时间下午 1点）
-    - cron: '0 4 * * *'
-  workflow_dispatch:
+# on:
+#   schedule:
+#     # 每天 UTC 04:00 启动（对应韩国时间下午 1点）
+#     - cron: '0 4 * * *'
+#   workflow_dispatch:
 
-jobs:
-  renew:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+# jobs:
+#   renew:
+#     runs-on: ubuntu-latest
+#     steps:
+#       - name: Checkout repository
+#         uses: actions/checkout@v4
 
-      - name: Random delay (韩国时间 13:00~19:00)
-        run: |
-          # 随机延迟 0 ~ 6 小时（0 ~ 21600 秒）
-          DELAY=$((RANDOM % 21600))
-          HOURS=$((DELAY / 3600))
-          MINUTES=$(( (DELAY % 3600) / 60 ))
-          echo "将在 ${HOURS} 小时 ${MINUTES} 分钟后执行（对应韩国时间大约 13:00~19:00）"
-          sleep $DELAY
+#       - name: Random delay (韩国时间 13:00~19:00)
+#         run: |
+#           # 随机延迟 0 ~ 6 小时（0 ~ 21600 秒）
+#           DELAY=$((RANDOM % 21600))
+#           HOURS=$((DELAY / 3600))
+#           MINUTES=$(( (DELAY % 3600) / 60 ))
+#           echo "将在 ${HOURS} 小时 ${MINUTES} 分钟后执行（对应韩国时间大约 13:00~19:00）"
+#           sleep $DELAY
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
+#       - name: Set up Node.js
+#         uses: actions/setup-node@v4
+#         with:
+#           node-version: '20'
 
-      - name: Install dependencies
-        run: npm install
+#       - name: Install dependencies
+#         run: npm install
 
-      - name: Run Login Script
-        env:
-          SITE_USERNAME: ${{ secrets.LUNES_USERNAME }}
-          SITE_PASSWORD: ${{ secrets.LUNES_PASSWORD }}
-          TG_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TG_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        run: node site2_login.js
+#       - name: Run Login Script
+#         env:
+#           SITE_USERNAME: ${{ secrets.LUNES_USERNAME }}
+#           SITE_PASSWORD: ${{ secrets.LUNES_PASSWORD }}
+#           TG_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+#           TG_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+#         run: node site2_login.js
