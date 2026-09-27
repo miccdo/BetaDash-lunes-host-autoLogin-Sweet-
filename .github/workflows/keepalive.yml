@@ -1,79 +1,79 @@
-name: Keep GitHub Actions Alive & Auto Login
+# name: Keep GitHub Actions Alive & Auto Login
 
-on:
-  schedule:
-    # 韩国时间 (UTC+9) 凌晨 1:00 对应 UTC 16:00
-    - cron: '0 16 * * *'
-  workflow_dispatch:      # 支持手动触发
+# on:
+#   schedule:
+#     # 韩国时间 (UTC+9) 凌晨 1:00 对应 UTC 16:00
+#     - cron: '0 16 * * *'
+#   workflow_dispatch:      # 支持手动触发
 
-jobs:
-  keepalive:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+# jobs:
+#   keepalive:
+#     runs-on: ubuntu-latest
+#     permissions:
+#       contents: write
+#     steps:
+#       - name: Checkout repository
+#         uses: actions/checkout@v4
 
-      # 1. 先进行 0~6 随机抽签
-      - name: Decide whether to run
-        id: decide
-        run: |
-          RAND_NUM=$(( RANDOM % 7 ))
-          echo "🎲 今日抽签数字: ${RAND_NUM} (只有命中 0 才执行)"
+#       # 1. 先进行 0~6 随机抽签
+#       - name: Decide whether to run
+#         id: decide
+#         run: |
+#           RAND_NUM=$(( RANDOM % 7 ))
+#           echo "🎲 今日抽签数字: ${RAND_NUM} (只有命中 0 才执行)"
 
-          if [ $RAND_NUM -eq 0 ]; then
-            echo "🎯 命中数字 0！准备执行任务"
-            echo "should_run=true" >> $GITHUB_OUTPUT
-          else
-            echo "⏭️ 未命中数字 0（抽中 ${RAND_NUM}），直接结束"
-            echo "should_run=false" >> $GITHUB_OUTPUT
-          fi
+#           if [ $RAND_NUM -eq 0 ]; then
+#             echo "🎯 命中数字 0！准备执行任务"
+#             echo "should_run=true" >> $GITHUB_OUTPUT
+#           else
+#             echo "⏭️ 未命中数字 0（抽中 ${RAND_NUM}），直接结束"
+#             echo "should_run=false" >> $GITHUB_OUTPUT
+#           fi
 
-      # 2. 中了之后，再进行韩国时间 1:00 ~ 7:00 的随机延迟 (休眠 0 ~ 360 分钟)
-      - name: Random Delay (KST 1:00 - 7:00)
-        if: steps.decide.outputs.should_run == 'true'
-        run: |
-          RAND_DELAY=$(( RANDOM % 21601 ))
-          DELAY_MIN=$(( RAND_DELAY / 60 ))
-          echo "⏱️ 抽中任务！开启随机延时，休眠 ${DELAY_MIN} 分钟后再执行..."
-          sleep $RAND_DELAY
+#       # 2. 中了之后，再进行韩国时间 1:00 ~ 7:00 的随机延迟 (休眠 0 ~ 360 分钟)
+#       - name: Random Delay (KST 1:00 - 7:00)
+#         if: steps.decide.outputs.should_run == 'true'
+#         run: |
+#           RAND_DELAY=$(( RANDOM % 21601 ))
+#           DELAY_MIN=$(( RAND_DELAY / 60 ))
+#           echo "⏱️ 抽中任务！开启随机延时，休眠 ${DELAY_MIN} 分钟后再执行..."
+#           sleep $RAND_DELAY
 
-      # 3. 配置 Node.js 环境
-      - name: Setup Node.js
-        if: steps.decide.outputs.should_run == 'true'
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
+#       # 3. 配置 Node.js 环境
+#       - name: Setup Node.js
+#         if: steps.decide.outputs.should_run == 'true'
+#         uses: actions/setup-node@v4
+#         with:
+#           node-version: 20
 
-      # 4. 安装项目依赖
-      - name: Install Dependencies
-        if: steps.decide.outputs.should_run == 'true'
-        run: |
-          if [ -f package.json ]; then
-            npm ci || npm install
-          fi
+#       # 4. 安装项目依赖
+#       - name: Install Dependencies
+#         if: steps.decide.outputs.should_run == 'true'
+#         run: |
+#           if [ -f package.json ]; then
+#             npm ci || npm install
+#           fi
 
-      # 5. 执行 Puppeteer 自动登录脚本
-      - name: Run Login Script
-        if: steps.decide.outputs.should_run == 'true'
-        env:
-          LUNES_USERNAME: ${{ secrets.LUNES_USERNAME }}
-          LUNES_PASSWORD: ${{ secrets.LUNES_PASSWORD }}
-          TWOCAPTCHA_API_KEY: ${{ secrets.TWOCAPTCHA_API_KEY }}
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        run: node scripts/login.js
+#       # 5. 执行 Puppeteer 自动登录脚本
+#       - name: Run Login Script
+#         if: steps.decide.outputs.should_run == 'true'
+#         env:
+#           LUNES_USERNAME: ${{ secrets.LUNES_USERNAME }}
+#           LUNES_PASSWORD: ${{ secrets.LUNES_PASSWORD }}
+#           TWOCAPTCHA_API_KEY: ${{ secrets.TWOCAPTCHA_API_KEY }}
+#           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+#           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+#         run: node scripts/login.js
 
-      # 6. Git Push 提交保活
-      - name: Prevent Actions Suspended
-        if: steps.decide.outputs.should_run == 'true'
-        run: |
-          date -u > .keepalive
+#       # 6. Git Push 提交保活
+#       - name: Prevent Actions Suspended
+#         if: steps.decide.outputs.should_run == 'true'
+#         run: |
+#           date -u > .keepalive
 
-          git config --global user.name "github-actions[bot]"
-          git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git add .keepalive
-          git commit -m "chore: keep github actions alive [skip ci]" || exit 0
-          git pull --rebase
-          git push
+#           git config --global user.name "github-actions[bot]"
+#           git config --global user.email "github-actions[bot]@users.noreply.github.com"
+#           git add .keepalive
+#           git commit -m "chore: keep github actions alive [skip ci]" || exit 0
+#           git pull --rebase
+#           git push
